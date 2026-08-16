@@ -1,0 +1,21 @@
+# Virtual environment
+.venv/
+
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# Run logs
+runs/
+
+# Other
+docs/
+CLAUDE.md

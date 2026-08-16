@@ -1,0 +1,4 @@
+# ETHER ground console dependencies. Resolved against CPython 3.13.
+
+PySide6-Essentials==6.11.1
+pyqtgraph==0.14.0
