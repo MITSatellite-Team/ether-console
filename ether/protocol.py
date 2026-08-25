@@ -6,7 +6,26 @@ SYNC_BYTES = struct.pack("<H", SYNC)
 
 HEADER_FMT = "<HBBIHH"
 HEADER_LEN = struct.calcsize(HEADER_FMT)
-MAX_PAYLOAD_LEN = 512
+MAX_PAYLOAD_LEN = 128
+SCHEMA_VER = 1
+
+FRAME_FAST = 0x01
+FRAME_MED = 0x02
+FRAME_SLOW = 0x03
+FRAME_DIAG = 0x04
+FRAME_EVENT = 0x05
+FRAME_ACK = 0x06
+FRAME_CMD = 0x10
+
+FRAME_NAMES = {
+    FRAME_FAST: "fast",
+    FRAME_MED: "med",
+    FRAME_SLOW: "slow",
+    FRAME_DIAG: "diag",
+    FRAME_EVENT: "event",
+    FRAME_ACK: "ack",
+    FRAME_CMD: "cmd",
+}
 
 BITS_PER_BYTE = 8
 BYTE_MASK = (1 << BITS_PER_BYTE) - 1            # 0xFF
@@ -61,6 +80,12 @@ class Frame:
     seq: int
     payload: bytes
 
+def build_frame(frame_type: int, t_raw: int, seq: int, payload: bytes) -> bytes:
+    if len(payload) > MAX_PAYLOAD_LEN:
+        raise ValueError(f"payload length {len(payload)} bytes exceeds the max payload length {MAX_PAYLOAD_LEN} bytes")
+    header = struct.pack(HEADER_FMT, SYNC, SCHEMA_VER, frame_type, t_raw & 0xFFFFFFFF, seq & 0xFFFF, len(payload))
+    body = header + payload
+    return body + struct.pack("<H", crc16(body))
 @dataclass
 class ParserStats:
     ok_frames: int = 0
