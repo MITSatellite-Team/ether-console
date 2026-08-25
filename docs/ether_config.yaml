@@ -1,0 +1,393 @@
+schema_version: 1
+
+# ! All part values are placeholders!
+
+protocol:
+  timestamp_unit_s: 1.0e-4
+
+# ---------------------------------------------------------------------------
+# Data Frames
+# ---------------------------------------------------------------------------
+frames:
+  fast:  {id: 0x01, rate_hz: 50, stale_after_s: 0.5}
+  med:   {id: 0x02, rate_hz: 10, stale_after_s: 1.0}
+  slow:  {id: 0x03, rate_hz: 5,  stale_after_s: 2.0}
+  diag:  {id: 0x04, rate_hz: 1,  stale_after_s: 5.0}
+  event: {id: 0x05, rate_hz: 0,  stale_after_s: null}
+  ack:   {id: 0x06, rate_hz: 0,  stale_after_s: null}
+  cmd:   {id: 0x10, rate_hz: 0,  stale_after_s: null}
+
+# ---------------------------------------------------------------------------
+# Thermocouples
+#
+# `grid` is [row, col] in the heat-map.
+#
+# `caution` and `warning` are [low, high] bands in engineering units.
+# ---------------------------------------------------------------------------
+thermocouples:
+  units: K
+  scale: 0.01 # unit per count
+  offset: 0.0
+  channels:
+    TC00: {bit: 0, label: "Tank 1 Section A",
+      grid: [0, 0], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC01: {bit: 1, label: "Tank 1 Section B",
+      grid: [1, 0], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC02: {bit: 2, label: "Tank 1 Section C",
+      grid: [2, 0], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC03: {bit: 3, label: "Tank 1 Section D",
+      grid: [3, 0], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC04: {bit: 4, label: "Tank 1 Section E",
+      grid: [4, 0], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC05: {bit: 5, label: "Tank 2 Section A",
+      grid: [0, 1], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC06: {bit: 6, label: "Tank 2 Section B",
+      grid: [1, 1], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC07: {bit: 7, label: "Tank 2 Section C",
+      grid: [2, 1], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC08: {bit: 8, label: "Tank 2 Section D",
+      grid: [3, 1], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC09: {bit: 9, label: "Tank 2 Section E",
+      grid: [4, 1], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC10: {bit: 10, label: "Tank 3 Section A",
+      grid: [0, 2], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC11: {bit: 11, label: "Tank 3 Section B",
+      grid: [1, 2], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC12: {bit: 12, label: "Tank 3 Section C",
+      grid: [2, 2], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC13: {bit: 13, label: "Tank 3 Section D",
+      grid: [3, 2], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+    TC14: {bit: 14, label: "Tank 3 Section E",
+      grid: [4, 2], caution: [63.0, 80.0], warning: [55.0, 320.0]}
+
+# ---------------------------------------------------------------------------
+# Pressure Sensors
+# ---------------------------------------------------------------------------
+pressure:
+  units: bar
+  scale: 0.0001 # unit per count
+  offset: 0.0
+  channels:
+    PS00:
+      bit: 0
+      label: "Tank 1"
+      caution: [0.0, 2.8]
+      warning: [0.0, 3.3]
+    PS01:
+      bit: 1
+      label: "Tank 2"
+      caution: [0.0, 2.8]
+      warning: [0.0, 3.3]
+    PS02:
+      bit: 2
+      label: "Tank 3"
+      caution: [0.0, 2.8]
+      warning: [0.0, 3.3]
+
+# ---------------------------------------------------------------------------
+# INA232 rail monitors
+#
+# bus_v_lsb is fixed by the part. current_lsb is chosen when we
+# program the CAL register: current_lsb = max_expected_current / 32768.
+# power_lsb is a fixed multiple of current_lsb defined in the datasheet.
+# ---------------------------------------------------------------------------
+ina232:
+  bus_v_lsb: 0.0016
+  power_lsb_ratio: 32
+
+rails:
+  R3V3_DIG:
+    bit: 0
+    label: "3V3 digital"
+    current_lsb: 0.0001
+    caution_v: [3.20, 3.40]
+    warning_v: [3.10, 3.50]
+    caution_i: [0.0, 0.30]
+    warning_i: [0.0, 0.50]
+  R3V3_SNS:
+    bit: 1
+    label: "3V3 sensor"
+    current_lsb: 0.0001
+    caution_v: [3.20, 3.40]
+    warning_v: [3.10, 3.50]
+    caution_i: [0.0, 0.30]
+    warning_i: [0.0, 0.50]
+  R5V:
+    bit: 2
+    label: "5V"
+    current_lsb: 0.0002
+    caution_v: [4.85, 5.15]
+    warning_v: [4.70, 5.30]
+    caution_i: [0.0, 0.60]
+    warning_i: [0.0, 1.00]
+  R28V:
+    bit: 3
+    label: "28V"
+    current_lsb: 0.001
+    caution_v: [26.0, 30.0]
+    warning_v: [24.0, 32.0]
+    caution_i: [0.0, 1.60]
+    warning_i: [0.0, 2.50]
+
+# ---------------------------------------------------------------------------
+# IMU
+#
+# IMU scale is runtime-variable: it is fsr / 32768, and the fsr is chosen by
+# a register the payload reports back in DIAG's imu_cfg byte.
+#
+# `bits` is [lsb, msb] inclusive within the imu_cfg byte; bits 6-7 are spare.
+# ---------------------------------------------------------------------------
+imu:
+  accel:
+    units: g
+    bits: [0, 1] # of the DIAG imu_cfg byte
+    fsr:
+      0: 2.0
+      1: 4.0
+      2: 8.0
+      3: 16.0
+    expected_fsr_code: 3          # +/-16 g -> scale 16/32768
+    caution: [-8.0, 8.0]
+    warning: [-16.0, 16.0]
+  gyro:
+    units: deg/s
+    bits: [2, 3] # of the DIAG imu_cfg byte
+    fsr:
+      0: 250
+      1: 500
+      2: 1000
+      3: 2000
+    expected_fsr_code: 3          # +/-2000 deg/s -> scale 2000/32768
+    caution: [-1000, 1000]
+    warning: [-2000, 2000]
+  mag:
+    units: gauss
+    bits: [4, 5] # of the DIAG imu_cfg byte
+    fsr:
+      0: 4.0
+      1: 8.0
+      2: 12.0
+      3: 16.0
+    expected_fsr_code: 1          # +/-8 gauss -> scale 8/32768
+
+# ---------------------------------------------------------------------------
+# Motor
+# ---------------------------------------------------------------------------
+motor:
+  current:
+    scale: 0.001
+    units: A
+    caution: [0.0, 6.0]
+    warning: [0.0, 9.0]
+
+  voltage:
+    scale: 0.001
+    units: V
+    caution: [24.0, 30.0]
+    warning: [22.0, 32.0]
+
+# ---------------------------------------------------------------------------
+# Microcontroller Unit
+# ---------------------------------------------------------------------------
+mcu:
+  temp:
+    scale: 0.01
+    units: K
+    caution: [253.15, 343.15]
+    warning: [233.15, 358.15]
+  vref:
+    scale: 0.001
+    units: V
+    caution: [3.20, 3.40]
+    warning: [3.10, 3.50]
+  cpu_load:
+    scale: 0.01
+    units: "%"
+    caution: [0, 80]
+    warning: [0, 95]
+  heap_free:
+    scale: 1.0
+    units: B
+    caution: [4096, 999999]
+    warning: [1024, 999999]
+
+# ---------------------------------------------------------------------------
+# Bitfields
+#
+# 0 = healthy, 1 = fault triggered
+# ---------------------------------------------------------------------------
+motor_fault_bits:
+  0: {key: OL,        label: "Open load",             severity: warning}
+  1: {key: TF,        label: "Thermal fault",         severity: fault}
+  2: {key: STL,       label: "Stall",                 severity: warning}
+  3: {key: OCP,       label: "Overcurrent",           severity: fault}
+  4: {key: CPUV,      label: "Charge pump undervolt", severity: fault}
+  5: {key: UVLO,      label: "Undervoltage lockout",  severity: fault}
+  6: {key: SPI_ERROR, label: "SPI error",             severity: warning}
+  7: {key: FAULT,     label: "Driver fault",          severity: fault}
+
+status_bits:
+  0: {key: WDT_FAULT,   label: "Watchdog unhealthy",      severity: fault}
+  1: {key: IMU_FAULT,   label: "IMU not responding",      severity: warning}
+  2: {key: MTR_FAULT,   label: "Motor sensing invalid",   severity: caution}
+
+latch_bits:
+  0: {key: OC_3V3_DIG, label: "3V3 digital overcurrent latched", severity: fault}
+  1: {key: OV_3V3_DIG, label: "3V3 digital overvoltage latched", severity: fault}
+  2: {key: OC_3V3_SNS, label: "3V3 sensor overcurrent latched",  severity: warning}
+  3: {key: OV_3V3_SNS, label: "3V3 sensor overvoltage latched",  severity: warning}
+  4: {key: OC_5V,      label: "5V0 overcurrent latched",         severity: fault}
+  5: {key: OV_5V,      label: "5V0 overvoltage latched",         severity: fault}
+  6: {key: OC_28V,     label: "28V overcurrent latched",         severity: fault}
+  7: {key: OV_28V,     label: "28V overvoltage latched",         severity: fault}
+
+# ---------------------------------------------------------------------------
+# State Machines
+# ---------------------------------------------------------------------------
+fsm_states:
+  0: BOOT
+  1: IDLE
+  2: ARMED
+  3: MIXING
+  4: SETTLING
+  5: SAFE
+  6: FAULT
+
+power_modes:
+  0: OFF
+  1: STANDBY
+  2: MIX_LOW
+  3: MIX_HIGH
+  4: SAFE
+
+# ---------------------------------------------------------------------------
+# ACK Frame
+# ---------------------------------------------------------------------------
+ack_status:
+  0: {key: ACCEPTED, label: "Accepted", severity: info}
+  1: {key: REJECTED, label: "Rejected", severity: warning}
+  2: {key: BUSY,     label: "Busy",     severity: caution}
+
+ack_reasons:
+  0x00: {key: NONE,               label: "-"}
+
+  # command identity
+  0x01: {key: UNKNOWN_CMD,        label: "Unknown command"}
+  0x02: {key: NOT_IMPLEMENTED,    label: "Command not implemented"}
+  0x03: {key: BAD_SCHEMA,         label: "Schema version mismatch"}
+
+  # arguments
+  0x10: {key: BAD_ARG_LEN,        label: "Wrong argument length"}
+  0x11: {key: ARG_OUT_OF_RANGE,   label: "Argument out of range"}
+
+  # state and permission
+  0x20: {key: NOT_PERMITTED,      label: "Not permitted in state"}
+  0x21: {key: ILLEGAL_TRANSITION, label: "Illegal FSM transition requested"}
+  0x22: {key: READ_ONLY,          label: "Payload locked / read-only"}
+
+  # resources
+  0x30: {key: QUEUE_FULL,         label: "Command queue full"}
+
+  # safety
+  0x40: {key: INTERLOCK,          label: "Blocked by safety interlock"}
+
+  0xFF: {key: UNSPECIFIED,        label: "Reason not specified"}
+
+# ---------------------------------------------------------------------------
+# Commands
+#
+# `guard: arm` means the console requires a separate Arm click before Send.
+# `confirm` means a modal confirmation naming the effect.
+
+# `args` lists each argument's semantic type. Every argument occupies one 4-byte
+# slot on the wire regardless (CMD is `2 + 4*n_args`).
+# ---------------------------------------------------------------------------
+commands:
+  # 0x00xx - tests
+  # 0x0000 is deliberately unassigned so a zeroed buffer cannot decode as a valid command.
+  0x0001: {key: NOOP,           label: "Ping",                     args: [],       timeout_s: 1.0}
+
+  # 0x01xx - state control
+  0x0100: {key: SET_POWER_MODE, label: "Set power mode",           args: [uint8],  timeout_s: 2.0, guard: confirm}
+  0x0101: {key: FORCE_STATE,    label: "Force FSM state",          args: [uint8],  timeout_s: 2.0, guard: arm}
+
+  # 0x02xx - clearing sticky flags
+  0x0200: {key: CLEAR_LATCH,    label: "Clear protection latch",   args: [uint16], timeout_s: 1.0, guard: confirm}
+  0x0201: {key: CLEAR_FAULT,    label: "Clear motor driver fault", args: [],       timeout_s: 1.0, guard: confirm}
+
+  # 0x03xx - timing
+  0x0300: {key: SET_WDT,        label: "Set watchdog timeout",     args: [uint16], timeout_s: 1.0, guard: arm}
+  0x0301: {key: SYNC_CLOCK,     label: "Sync clock",               args: [uint32], timeout_s: 1.0}
+
+  # 0x04xx - configuration
+  0x0400: {key: SET_TC_MASK,    label: "Set thermocouple mask",    args: [uint16], timeout_s: 1.0, guard: arm}
+
+# ---------------------------------------------------------------------------
+# Event codes
+#
+# {0}, {1} ... substitute the int32 args from the EVENT frame.
+#
+# `args` declares what each {n} is, so the console renders a name instead of a
+# bare integer. Types:
+#
+#   raw                              plain integer, substituted as-is
+#   fsm_states | power_modes         looked up in that enum table
+#   safe_mode_causes                 looked up, rendered as its label
+#   tc_index                         thermocouple slot -> thermocouples.channels label
+#   rail_index                       rail bit -> rails label
+# ---------------------------------------------------------------------------
+events:
+  # 0x00xx - lifecycle - boot, FSM transition, power mode change
+  0x0001: {severity: info,    text: "Boot complete, firmware build {0}",        args: [raw]}
+  0x0002: {severity: info,    text: "FSM {0} -> {1}",                           args: [fsm_states, fsm_states]}
+  0x0003: {severity: info,    text: "Power mode -> {0}",                        args: [power_modes]}
+
+  # 0x01xx - tank - thermocouple band/open-circuit, pressure rise
+  0x0100: {severity: caution, text: "Thermocouple {0} outside band ({1} cK)",   args: [tc_index, raw]}
+  0x0101: {severity: warning, text: "Thermocouple {0} open circuit",            args: [tc_index]}
+  0x0102: {severity: caution, text: "Tank pressure rising, {0} ubar/s",         args: [raw]}
+
+  # 0x02xx - rails - overcurrent, protection latched
+  0x0200: {severity: warning, text: "Rail {0} overcurrent, {1} uA",             args: [rail_index, raw]}
+  0x0201: {severity: fault,   text: "Rail {0} protection latched",              args: [rail_index]}
+
+  # 0x03xx - motor - driver fault register, stall
+  0x0300: {severity: warning, text: "Motor driver fault register 0x{0:02X}",    args: [raw]}
+  0x0301: {severity: warning, text: "Motor stall detected at {0} mA",           args: [raw]}
+
+  # 0x04xx - MCU - watchdog timeout, clock drift, safe mode entry
+  0x0400: {severity: fault,   text: "Watchdog timeout, resetting",              args: []}
+  0x0401: {severity: warning, text: "Clock drift {0} ms exceeds limit",         args: [raw]}
+  0x0402: {severity: fault,   text: "Entering safe mode, cause {0}",            args: [safe_mode_causes]}
+
+safe_mode_causes:
+  0x0000: {key: NONE,              label: "No cause recorded"}
+
+  # 0x01xx - tank
+  0x0100: {key: TANK_OVERPRESSURE, label: "Tank pressure above limit"}
+  0x0101: {key: TANK_OVERTEMP,     label: "Tank temperature above limit"}
+  0x0102: {key: TC_QUORUM_LOST,    label: "Too few valid thermocouples"}
+  0x0103: {key: PRESSURE_LOST,     label: "No valid pressure channel"}
+
+  # 0x01xx - tank / electrical
+  0x0200: {key: RAIL_LATCH,        label: "Rail protection latched"}
+  0x0201: {key: UNDERVOLTAGE,      label: "Supply undervoltage / brownout"}
+
+  # 0x03xx - motor
+  0x0300: {key: MOTOR_FAULT,       label: "Motor driver fault register set"}
+  0x0301: {key: MOTOR_STALL,       label: "Motor stall persisted"}
+  0x0302: {key: MOTOR_OVERTEMP,    label: "Motor driver thermal fault"}
+
+  # 0x04xx - MCU / compute / timing
+  0x0400: {key: WATCHDOG_RESET,    label: "Watchdog reset"}
+  0x0401: {key: CLOCK_DRIFT,       label: "Clock drift exceeded trip threshold"}
+  0x0402: {key: ASSERT_FAILED,     label: "Firmware assertion failed"}
+  0x0403: {key: ILLEGAL_TRANSITION, label: "Illegal FSM transition requested"}
+  0x0404: {key: MCU_OVERTEMP,      label: "MCU temperature above limit"}
+
+  # 0x05xx external
+  0x0500: {key: GROUND_COMMAND,    label: "Commanded to safe mode"}
+  0x0501: {key: HOST_COMMAND,      label: "Host spacecraft commanded safe"}
+  0x0502: {key: COMMS_TIMEOUT,     label: "No ground contact within timeout"}
+
+  0xFFFF: {key: UNKNOWN,           label: "Cause not determined"}
