@@ -95,9 +95,10 @@ class ParserStats:
     schema_mismatch: int = 0
 
 class FrameParser:
-    def __init__(self) -> None:
+    def __init__(self, expected_schema: int = SCHEMA_VER) -> None:
         self._buf = bytearray()
         self.stats = ParserStats()
+        self._expected_schema = expected_schema
 
     def _skip_sync(self) -> None:
         self.stats.bytes_discarded += len(SYNC_BYTES)
