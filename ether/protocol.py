@@ -27,6 +27,15 @@ FRAME_NAMES = {
     FRAME_CMD: "cmd",
 }
 
+PAYLOAD_FMT = {
+    FRAME_FAST: "<9h2H",
+    FRAME_MED: "<2B3H" + "HhH" * 4,
+    FRAME_SLOW: "<H15H",
+    FRAME_DIAG: "<I5H6B",
+    FRAME_ACK: "<HBB",
+}
+PAYLOAD_LEN = {frame_type: struct.calcsize(payload_format) for frame_type, payload_format in PAYLOAD_FMT.items()}
+
 BITS_PER_BYTE = 8
 BYTE_MASK = (1 << BITS_PER_BYTE) - 1            # 0xFF
 
@@ -88,7 +97,7 @@ def build_frame(frame_type: int, t_raw: int, seq: int, payload: bytes) -> bytes:
     return body + struct.pack("<H", crc16(body))
 @dataclass
 class ParserStats:
-    ok_frames: int = 0
+    good_frames: int = 0
     crc_errors: int = 0
     bad_length: int = 0
     bytes_discarded: int = 0
@@ -161,7 +170,7 @@ class FrameParser:
                 seq = seq,
                 payload = packet_body[HEADER_LEN:],
             ))
-            self.stats.frames_ok += 1
+            self.stats.good_frames += 1
             del self._buf[:packet_len]
 
         return frames
