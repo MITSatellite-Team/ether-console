@@ -2,30 +2,50 @@ import struct
 from dataclasses import dataclass, field
 
 from .config import ARG_RENDERERS, Config, WARNING, render_unknown
-from .protocol import Frame, FRAME_NAMES, FRAME_FAST, FRAME_MED, FRAME_SLOW, FRAME_DIAG, FRAME_EVENT, FRAME_ACK, PAYLOAD_FMT, PAYLOAD_LEN
+from .protocol import Frame, FRAME_NAMES, FRAME_FAST, FRAME_MED, FRAME_SLOW, FRAME_DIAG, FRAME_EVENT, FRAME_ACK, PAYLOAD_FMT, FIXED_PAYLOAD_LEN, VAR_PAYLOAD_LEN
 
 # --------------------------------------------------------------------------
 # Time
 # --------------------------------------------------------------------------
 
 class TimeUnwrapper:
+    """
+    Recover a monotonic timestamp (for downlink frames) from the payload's 32-bit tick counter.
+    """
     _WRAP = 1 << 32
+    _HALF_WRAP = _WRAP // 2
 
     def __init__(self, tick_s: float) -> None:
         self._tick_s = tick_s
-        self._last_timestamps: dict[int, int] = {}
-        self._wrap_counts: dict[int, int] = {}
+        self._newest_timestamp: int | None = None
+        self._wraps = 0
 
-    def unwrap(self, frame_type: int, t_raw: int) -> float:
-        last_timestamp = self._last_timestamps.get(frame_type)
-        wrap_count = self._wrap_counts.get(frame_type, 0)
-        if last_timestamp is not None and t_raw < last_timestamp:
-            # Account for jitter
-            if last_timestamp - t_raw > self._WRAP // 2:
-                wrap_count += 1
-                self._wrap_counts[frame_type] = wrap_count
-        self._last_timestamps[frame_type] = t_raw
-        return (wrap_count * self._WRAP + t_raw) * self._tick_s
+    def unwrap(self, t_raw: int) -> float:
+        if self._newest_timestamp is None:
+            self._newest_timestamp = t_raw
+            return t_raw * self._tick_s
+
+        delta = t_raw - self._newest_timestamp
+        wraps = self._wraps
+
+        # Four cases, by how far this timestamp sits from the newest one seen.
+        # The fourth needs no branch: a little behind is ordinary, because
+        # frame types interleave and a slower frame can be assembled before a
+        # faster one that ships first. Stamp it in the current epoch and leave
+        # the reference where it is.
+        if delta < -self._HALF_WRAP:
+            # Far behind: time rolled over, so a new epoch begins.
+            self._wraps = wraps = wraps + 1
+            self._newest_timestamp = t_raw
+        elif delta > self._HALF_WRAP:
+            # Far ahead: stamped just before the last rollover but delivered
+            # just after it, so it belongs to the previous epoch.
+            wraps -= 1
+        elif delta > 0:
+            # Ahead: a new high, and the reference follows it.
+            self._newest_timestamp = t_raw
+
+        return (wraps * self._WRAP + t_raw) * self._tick_s
 
 # --------------------------------------------------------------------------
 # Sample (Decoded output)
@@ -40,9 +60,9 @@ class Event:
     derives itself, which are merged into the same log.
     """
     t_s: float
-    code: int
     severity: str
     text: str
+    code: int | None = None      # None for console-derived entries
     args: tuple[int, ...] = ()
     source: str = "payload"
 
@@ -95,17 +115,28 @@ class Decoder:
             return None
 
         sample = Sample(
-            t_s = self._time_unwrapper.unwrap(frame.frame_type, frame.t_raw),
+            t_s = self._time_unwrapper.unwrap(frame.t_raw),
             frame_type = frame.frame_type,
             seq = frame.seq,
         )
-        handler(frame.payload, sample)
+        try:
+            handler(frame.payload, sample)
+        except (ValueError, KeyError, struct.error) as exc:
+            # The CRC has already passed, so this is not line corruption: the
+            # firmware and this config disagree.
+            sample = Sample(t_s=sample.t_s, frame_type=sample.frame_type, seq=sample.seq)
+            sample.events.append(Event(
+                t_s=sample.t_s,
+                severity=WARNING,
+                source="console",
+                text=f"{sample.frame_name} seq {sample.seq} decode failed: {exc}",
+            ))
         return sample
 
     # 0x01
     def _fast(self, payload: bytes, sample: Sample) -> None:
-        if len(payload) != PAYLOAD_LEN[FRAME_FAST]:
-            raise ValueError(f"FAST payload is {len(payload)} bytes, expected {PAYLOAD_LEN[FRAME_FAST]} bytes")
+        if len(payload) != FIXED_PAYLOAD_LEN[FRAME_FAST]:
+            raise ValueError(f"FAST payload is {len(payload)} bytes, expected {FIXED_PAYLOAD_LEN[FRAME_FAST]} bytes")
         keys = ("ACC_X", "ACC_Y", "ACC_Z", "GYR_X", "GYR_Y", "GYR_Z", "MAG_X", "MAG_Y", "MAG_Z", "MOTOR_I", "MOTOR_V")
         values = struct.unpack(PAYLOAD_FMT[FRAME_FAST], payload)
         for key, raw_value in zip(keys, values):
@@ -113,8 +144,8 @@ class Decoder:
 
     # 0x02
     def _med(self, payload: bytes, sample: Sample) -> None:
-        if len(payload) != PAYLOAD_LEN[FRAME_MED]:
-            raise ValueError(f"MED payload is {len(payload)} bytes, expected {PAYLOAD_LEN[FRAME_MED]} bytes")
+        if len(payload) != FIXED_PAYLOAD_LEN[FRAME_MED]:
+            raise ValueError(f"MED payload is {len(payload)} bytes, expected {FIXED_PAYLOAD_LEN[FRAME_MED]} bytes")
         values = struct.unpack(PAYLOAD_FMT[FRAME_MED], payload)
         press_mask, ina_mask = values[0], values[1]
 
@@ -137,8 +168,8 @@ class Decoder:
 
     # 0x03
     def _slow(self, payload: bytes, sample: Sample) -> None:
-        if len(payload) != PAYLOAD_LEN[FRAME_SLOW]:
-            raise ValueError(f"SLOW payload is {len(payload)} bytes, expected {PAYLOAD_LEN[FRAME_SLOW]} bytes")
+        if len(payload) != FIXED_PAYLOAD_LEN[FRAME_SLOW]:
+            raise ValueError(f"SLOW payload is {len(payload)} bytes, expected {FIXED_PAYLOAD_LEN[FRAME_SLOW]} bytes")
         values = struct.unpack(PAYLOAD_FMT[FRAME_SLOW], payload)
         tc_mask = values[0]
 
@@ -158,8 +189,8 @@ class Decoder:
 
     # 0x04
     def _diag(self, payload: bytes, sample: Sample) -> None:
-        if len(payload) != PAYLOAD_LEN[FRAME_DIAG]:
-            raise ValueError(f"DIAG payload is {len(payload)} bytes, expected {PAYLOAD_LEN[FRAME_DIAG]} bytes")
+        if len(payload) != FIXED_PAYLOAD_LEN[FRAME_DIAG]:
+            raise ValueError(f"DIAG payload is {len(payload)} bytes, expected {FIXED_PAYLOAD_LEN[FRAME_DIAG]} bytes")
 
         (time_in_mode_ms, latch_flags, mcu_temp, mcu_vref,
          cpu_load, heap_free, fsm_state, power_mode,
@@ -201,7 +232,7 @@ class Decoder:
 
     # 0x05
     def _event(self, payload: bytes, sample: Sample) -> None:
-        if len(payload) < 2 or (len(payload) - 2) % 4:
+        if len(payload) not in VAR_PAYLOAD_LEN:
             raise ValueError(f"EVENT payload is {len(payload)} bytes, expected 2 + 4*n_args")
         (code,) = struct.unpack_from("<H", payload, 0)
         n_args = (len(payload) - 2) // 4
@@ -241,8 +272,8 @@ class Decoder:
 
     # 0x06
     def _ack(self, payload: bytes, sample: Sample) -> None:
-        if len(payload) != PAYLOAD_LEN[FRAME_ACK]:
-            raise ValueError(f"ACK payload is {len(payload)} bytes, expected {PAYLOAD_LEN[FRAME_ACK]} bytes")
+        if len(payload) != FIXED_PAYLOAD_LEN[FRAME_ACK]:
+            raise ValueError(f"ACK payload is {len(payload)} bytes, expected {FIXED_PAYLOAD_LEN[FRAME_ACK]} bytes")
 
         cmd_seq, status, reason = struct.unpack(PAYLOAD_FMT[FRAME_ACK], payload)
 

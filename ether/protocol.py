@@ -27,14 +27,38 @@ FRAME_NAMES = {
     FRAME_CMD: "cmd",
 }
 
+MED_PRESSURE_SLOTS = 3
+MED_INA_SLOTS = 4
+SLOW_TC_SLOTS = 15
+
 PAYLOAD_FMT = {
     FRAME_FAST: "<9h2H",
-    FRAME_MED: "<2B3H" + "HhH" * 4,
-    FRAME_SLOW: "<H15H",
+    FRAME_MED: "<2B" + "H" * MED_PRESSURE_SLOTS + "HhH" * MED_INA_SLOTS,
+    FRAME_SLOW: "<H" + "H" * SLOW_TC_SLOTS,
     FRAME_DIAG: "<I5H6B",
     FRAME_ACK: "<HBB",
 }
-PAYLOAD_LEN = {frame_type: struct.calcsize(payload_format) for frame_type, payload_format in PAYLOAD_FMT.items()}
+FIXED_PAYLOAD_LEN = {frame_type: struct.calcsize(payload_format) for frame_type, payload_format in PAYLOAD_FMT.items()}
+
+VAR_LEN_FRAMES = {FRAME_EVENT, FRAME_CMD}
+ARG_SLOT_LEN = 4
+MAX_ARGS = 4
+VAR_PAYLOAD_LEN = frozenset(2 + ARG_SLOT_LEN * n for n in range(MAX_ARGS + 1))
+
+def payload_len_ok(frame_type: int, payload_len: int) -> bool:
+    """
+    frame-spec.md 4: every frame type has an exactly known length, so `length`
+    is checked against that value rather than against an upper bound.
+
+    An unrecognised frame type has no expected length, so it falls back to the
+    bound and the CRC decides. A firmware that adds a frame type is then
+    undecodable rather than mistaken for line noise.
+    """
+    if frame_type in FIXED_PAYLOAD_LEN:
+        return payload_len == FIXED_PAYLOAD_LEN[frame_type]
+    if frame_type in VAR_LEN_FRAMES:
+        return payload_len in VAR_PAYLOAD_LEN
+    return payload_len <= MAX_PAYLOAD_LEN
 
 BITS_PER_BYTE = 8
 BYTE_MASK = (1 << BITS_PER_BYTE) - 1            # 0xFF
@@ -89,10 +113,10 @@ class Frame:
     seq: int
     payload: bytes
 
-def build_frame(frame_type: int, t_raw: int, seq: int, payload: bytes) -> bytes:
+def build_frame(frame_type: int, t_raw: int, seq: int, payload: bytes, schema_ver: int = SCHEMA_VER) -> bytes:
     if len(payload) > MAX_PAYLOAD_LEN:
         raise ValueError(f"payload length {len(payload)} bytes exceeds the max payload length {MAX_PAYLOAD_LEN} bytes")
-    header = struct.pack(HEADER_FMT, SYNC, SCHEMA_VER, frame_type, t_raw & 0xFFFFFFFF, seq & 0xFFFF, len(payload))
+    header = struct.pack(HEADER_FMT, SYNC, schema_ver, frame_type, t_raw & 0xFFFFFFFF, seq & 0xFFFF, len(payload))
     body = header + payload
     return body + struct.pack("<H", crc16(body))
 @dataclass
@@ -139,8 +163,9 @@ class FrameParser:
 
             _sync, schema_ver, frame_type, t_raw, seq, payload_len = struct.unpack_from(HEADER_FMT, self._buf, 0)
 
-            if payload_len > MAX_PAYLOAD_LEN:
-                # False sync candidate led to false length. Attempt a new scan
+            if not payload_len_ok(frame_type, payload_len):
+                # Either a false sync candidate led to a false length, or the
+                # firmware and this build disagree about the layout. Attempt a new scan.
                 self.stats.bad_length += 1
                 self._skip_sync()
                 continue

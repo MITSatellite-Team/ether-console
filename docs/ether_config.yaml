@@ -12,6 +12,7 @@ link:
   rx_crc_errors:
     scale: 1.0
     units: count
+    saturates_at: 255
 
 # ---------------------------------------------------------------------------
 # Data Frames
@@ -249,8 +250,10 @@ motor_fault_bits:
 
 status_bits:
   0: {key: WDT_FAULT,   label: "Watchdog unhealthy",      severity: fault}
-  1: {key: IMU_FAULT,   label: "IMU not responding",      severity: warning}
-  2: {key: MTR_FAULT,   label: "Motor sensing invalid",   severity: caution}
+  1: {key: IMU_FAULT,   label: "IMU not responding",      severity: warning,
+      invalidates: [ACC_X, ACC_Y, ACC_Z, GYR_X, GYR_Y, GYR_Z, MAG_X, MAG_Y, MAG_Z]}
+  2: {key: MTR_FAULT,   label: "Motor sensing invalid",   severity: caution,
+      invalidates: [MOTOR_I, MOTOR_V]}
 
 latch_bits:
   0: {key: OC_3V3_DIG, label: "3V3 digital overcurrent latched", severity: fault}

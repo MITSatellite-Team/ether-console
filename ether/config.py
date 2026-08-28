@@ -6,11 +6,16 @@ from typing import Any, Self
 
 import yaml
 
+from .protocol import MED_INA_SLOTS, MED_PRESSURE_SLOTS, SLOW_TC_SLOTS
+
+# Channel statuses
 NOMINAL = "nominal"
 CAUTION = "caution"
 WARNING = "warning"
 STALE = "stale"
 ABSENT = "absent"
+
+EVENT_SEVERITIES = frozenset({"info", "caution", "warning", "fault"})
 
 # --------------------------------------------------------------------------
 # Channels
@@ -27,6 +32,7 @@ class ChannelDef:
     caution: tuple[float, float] | None = None
     warning: tuple[float, float] | None = None
     grid: tuple[int, int] | None = None
+    saturates_at: float | None = None   # value at which the counter stops rising
 
     def to_eng(self, raw: int) -> float:
         return raw * self.scale + self.offset
@@ -41,6 +47,7 @@ class ChannelDef:
 @dataclass
 class Config:
     digest: str # hashing of the config file that goes in the log header
+    schema_version: int
     tick_s: float
     frames: dict[str, dict[str, Any]]
     thermocouples: list[ChannelDef]
@@ -57,6 +64,7 @@ class Config:
     ack_status: dict[int, dict[str, Any]] = field(default_factory=dict)
     ack_reasons: dict[int, dict[str, Any]] = field(default_factory=dict)
     safe_mode_causes: dict[int, dict[str, Any]] = field(default_factory=dict)
+    invalidated_by: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: str | Path) -> Self:
@@ -66,6 +74,7 @@ class Config:
 
         obj = cls(
             digest=digest,
+            schema_version=cfg["schema_version"],
             tick_s=cfg["protocol"]["timestamp_unit_s"],
             frames=cfg["frames"],
             thermocouples=_channel_list(cfg["thermocouples"]),
@@ -90,8 +99,16 @@ class Config:
             seen[channel.key] = channel
 
         obj.channels = seen
+        obj.invalidated_by = {
+            spec["key"]: tuple(spec["invalidates"])
+            for spec in obj.status_bits.values()
+            if spec.get("invalidates")
+        }
 
         _validate_event_args(obj.events)
+        _validate_severities(obj)
+        _validate_frame_layout(obj)
+        _validate_invalidations(obj)
 
         return obj
 
@@ -124,7 +141,7 @@ def _rail_channels(cfg: dict[str, Any]) -> list[ChannelDef]:
     for key, rail in cfg["rails"].items():
         current_lsb = float(rail["current_lsb"])
         label = rail.get("label", key)
-        bit = rail["bit"]
+        bit = rail.get("bit")
         out.append(ChannelDef(
             key=f"{key}_V",
             label=f"{label} voltage",
@@ -180,6 +197,7 @@ def _scalar_channels(cfg: dict[str, Any]) -> list[ChannelDef]:
             units=spec.get("units", ""),
             caution=_band(spec.get("caution"), key),
             warning=_band(spec.get("warning"), key),
+            saturates_at=float(spec["saturates_at"]) if "saturates_at" in spec else None,
         ))
 
     # IMU
@@ -259,6 +277,95 @@ def render_unknown(tag: str, value: int, hex_digits: int = 0) -> str:
     return f"{tag}?({shown})"
 
 # --------------------------------------------------------------------------
+# Config Validations
+# --------------------------------------------------------------------------
+
+def _validate_event_args(events: dict[int, dict[str, Any]]) -> None:
+    """
+    Every kind named in an event's `args:` must have a renderer.
+
+    Without this an arg type typo is silently rendered as a bare integer instead of being loudly flagged as an error.
+    """
+    problems = [
+        f"  event 0x{code:04X} arg {i}: unknown kind {kind!r}"
+        for code, spec in events.items()
+        for i, kind in enumerate(spec.get("args", []))
+        if kind not in ARG_RENDERERS
+    ]
+    if problems:
+        raise ValueError("\n".join([
+            "config declares event argument kinds this build cannot render:",
+            *problems,
+            f"  known kinds: {', '.join(sorted(ARG_RENDERERS))}",
+        ]))
+
+def _validate_severities(cfg: "Config") -> None:
+    """
+    Every severity the config declares must be one this build renders.
+
+    Omitting `severity` is allowed and falls back to a default at the point of
+    use; naming one that does not exist is not.
+    """
+    problems: list[str] = []
+    for table_name in ("events", "status_bits", "motor_fault_bits", "latch_bits", "ack_status"):
+        for code, spec in getattr(cfg, table_name).items():
+            severity = spec.get("severity")
+            if severity is not None and severity not in EVENT_SEVERITIES:
+                enum_value = f"0x{code:04X}" if table_name == "events" else code
+                problems.append(f"  {table_name} {enum_value}: unknown severity {severity!r}")
+
+    for code, spec in cfg.ack_reasons.items():
+        if "severity" in spec:
+            problems.append(
+                f"  ack_reasons 0x{code:02X}: reasons carry no severity of their own, status sets the severity of the line")
+
+    if problems:
+        raise ValueError("\n".join([
+            "config declares severities this build cannot render:",
+            *problems,
+            f"  known severities: {', '.join(sorted(EVENT_SEVERITIES))}",
+        ]))
+
+def _validate_frame_layout(cfg: "Config") -> None:
+    """
+    Every masked channel must own exactly one slot in the frame that carries it.
+    """
+    groups = (
+        ("thermocouples", [(channel.key, channel.bit) for channel in cfg.thermocouples], SLOW_TC_SLOTS),
+        ("pressure", [(channel.key, channel.bit) for channel in cfg.pressure], MED_PRESSURE_SLOTS),
+        ("rails", [(key, rail.get("bit")) for key, rail in cfg.rails.items()], MED_INA_SLOTS),
+    )
+
+    problems: list[str] = []
+    for group, entries, slots in groups:
+        claimed: dict[int, str] = {}
+        for key, bit in entries:
+            if not isinstance(bit, int) or isinstance(bit, bool):
+                problems.append(f"  {group}: {key} has no integer bit ({bit!r})")
+            elif not 0 <= bit < slots:
+                problems.append(f"  {group}: {key} claims bit {bit}, but the frame carries {slots} slots")
+            elif bit in claimed:
+                problems.append(f"  {group}: {key} and {claimed[bit]} both claim bit {bit}")
+            else:
+                claimed[bit] = key
+
+    if problems:
+        raise ValueError("\n".join(["config does not fit the frame layout:", *problems]))
+
+def _validate_invalidations(cfg: "Config") -> None:
+    """
+    A fault bit may only invalidate channels that exist.
+    """
+    problems = [
+        f"  {spec['key']} invalidates unknown channel {key!r}"
+        for spec in cfg.status_bits.values()
+        for key in spec.get("invalidates", ())
+        if key not in cfg.channels
+    ]
+    if problems:
+        raise ValueError("\n".join(["config invalidates channels that do not exist:", *problems]))
+
+# --------------------------------------------------------------------------
 # Event argument rendering
 # --------------------------------------------------------------------------
 
@@ -286,22 +393,3 @@ ARG_RENDERERS: dict[str, Callable[[Config, int], Any]] = {
     "tc_index": _render_tc_index,
     "rail_index": _render_rail_index,
 }
-
-def _validate_event_args(events: dict[int, dict[str, Any]]) -> None:
-    """
-    Every kind named in an event's `args:` must have a renderer.
-
-    Without this an arg type typo is silently rendered as a bare integer instead of being loudly flagged as an error.
-    """
-    problems = [
-        f"  event 0x{code:04X} arg {i}: unknown kind {kind!r}"
-        for code, spec in events.items()
-        for i, kind in enumerate(spec.get("args", []))
-        if kind not in ARG_RENDERERS
-    ]
-    if problems:
-        raise ValueError("\n".join([
-            "config declares event argument kinds this build cannot render:",
-            *problems,
-            f"  known kinds: {', '.join(sorted(ARG_RENDERERS))}",
-        ]))
